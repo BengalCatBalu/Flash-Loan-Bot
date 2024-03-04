@@ -1,0 +1,8 @@
+.form {
+    margin: 1vh 1vw;
+}
+
+.text-block {
+    display: flex;
+    flex-direction: column;
+}

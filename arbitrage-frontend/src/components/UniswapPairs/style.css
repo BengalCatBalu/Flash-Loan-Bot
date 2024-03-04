@@ -1,0 +1,9 @@
+.centered-pagination .ant-pagination {
+    justify-content: center;
+}
+
+.table-container {
+    width: 100%;
+    overflow-y: scroll;
+    margin: 1vh 1vw;
+}
