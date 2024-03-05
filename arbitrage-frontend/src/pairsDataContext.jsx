@@ -3,7 +3,7 @@ import { useQuery, gql } from "@apollo/client";
 
 const GET_TOP_PAIRS = gql`
   {
-    pairs(first: 1000, orderBy: reserveUSD, orderDirection: desc) {
+    pairs(first: 500, orderBy: reserveUSD, orderDirection: desc) {
       id
       token0 {
         id
@@ -33,11 +33,11 @@ export const PairsDataProvider = ({ children }) => {
   useEffect(() => {
     if (!loading && data && data.pairs) {
       const formattedData = data.pairs
-        .filter(
-          (pair) =>
-            ["USDC", "USDT", "DAI"].includes(pair.token0.symbol) ||
-            ["USDC", "USDT", "DAI"].includes(pair.token1.symbol)
-        )
+        // .filter(
+        //   (pair) =>
+        //     ["USDC", "USDT", "DAI"].includes(pair.token0.symbol) ||
+        //     ["USDC", "USDT", "DAI"].includes(pair.token1.symbol)
+        // )
         .map((pair) => ({
           key: pair.id,
           token0symbol: pair.token0.symbol,
@@ -52,13 +52,12 @@ export const PairsDataProvider = ({ children }) => {
           liquidity: `$${parseFloat(pair.reserveUSD).toLocaleString()}`,
           priceToken0: (pair.reserve1 / pair.reserve0).toFixed(6),
           priceToken1: (pair.reserve0 / pair.reserve1).toFixed(6),
-          stablecoinPrice: ["USDC", "USDT", "DAI"].includes(pair.token0.symbol)
-            ? `1 ${pair.token1.symbol} = ${(
-                pair.reserve0 / pair.reserve1
-              ).toFixed(6)} ${pair.token0.symbol}`
-            : `1 ${pair.token0.symbol} = ${(
+          priceToken0String: `1 ${pair.token0.symbol} = ${(
                 pair.reserve1 / pair.reserve0
               ).toFixed(6)} ${pair.token1.symbol}`,
+          priceToken1String: `1 ${pair.token1.symbol} = ${(
+                pair.reserve0 / pair.reserve1
+              ).toFixed(6)} ${pair.token0.symbol}`,
           stablecoinPriceNum: ["USDC", "USDT", "DAI"].includes(
             pair.token0.symbol
           )

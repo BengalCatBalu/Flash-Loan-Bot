@@ -67,7 +67,7 @@ contract FlashLoan {
         address initiator,
         bytes memory params
     ) public returns (bool) {
-        //require(msg.sender == address(pool), "not pool");
+        require(msg.sender == address(pool), "not pool");
         require(initiator == address(this));
         require(assets.length == 1, "Small length");
         (address swapTokenAddress, address secondStableCoinAddress) = abi
@@ -153,7 +153,7 @@ contract FlashLoan {
         }
         console.log(
             "Ending balance of borrowed token: ",
-            owed + 2131561
+            owed
         );
 
         return true;

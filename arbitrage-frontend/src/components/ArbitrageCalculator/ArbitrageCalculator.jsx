@@ -4,7 +4,6 @@ import { usePairsData } from "../../pairsDataContext";
 import "./style.css";
 
 const { Text } = Typography;
-const stablecoins = ["USDT", "USDC", "DAI"];
 export const ArbitrageCalculator = () => {
   const { pairsData } = usePairsData();
   const [selectedPair1, setSelectedPair1] = useState(null);
@@ -24,20 +23,37 @@ export const ArbitrageCalculator = () => {
   const availableSecondPairs = pairsData.filter(
     (pair) =>
       selectedPair1Data &&
-      selectedPair1Data.nonStableSymbol == pair.nonStableSymbol &&
-      selectedPair1Data.stableSymbol !== pair.stableSymbol
+      selectedPair1Data !== pair.address &&
+      (selectedPair1Data.token0symbol == pair.token0symbol ||
+        selectedPair1Data.token0symbol == pair.token1symbol ||
+        selectedPair1Data.token1symbol == pair.token0symbol ||
+        selectedPair1Data.token1symbol == pair.token1symbol)
   );
 
   // Automatically select stable pair based on first two selections
-  const availableStablePair = pairsData.find(
-    (pair) =>
-      selectedPair1Data &&
-      selectedPair2Data &&
-      (selectedPair1Data.stableSymbol == pair.stableSymbol ||
-        selectedPair1Data.stableSymbol == pair.nonStableSymbol) &&
-      (selectedPair2Data.stableSymbol == pair.stableSymbol ||
-        selectedPair2Data.stableSymbol == pair.nonStableSymbol)
-  );
+  const availableStablePair = pairsData.find((pair) => {
+    if (selectedPair1Data && selectedPair2Data) {
+      const pair1Tokens = [
+        selectedPair1Data.token0symbol,
+        selectedPair1Data.token1symbol,
+      ];
+      const pair2Tokens = [
+        selectedPair2Data.token0symbol,
+        selectedPair2Data.token1symbol,
+      ];
+
+      const notCommonTokens = [...pair1Tokens, ...pair2Tokens].filter(
+        (token) => !(pair2Tokens.includes(token) && pair1Tokens.includes(token))
+      );
+      console.log(notCommonTokens);
+      return (
+        notCommonTokens.includes(pair.token0symbol) &&
+        notCommonTokens.includes(pair.token1symbol)
+      );
+    } else {
+      return false;
+    }
+  });
 
   const validatePairs = () => {
     if (!selectedPair1Data || !selectedPair2Data || !availableStablePair) {
@@ -88,7 +104,7 @@ export const ArbitrageCalculator = () => {
               <Text type="secondary">{selectedPair1Data.address}</Text>
             )}
             {selectedPair1Data && (
-              <Text type="secondary">{selectedPair1Data.stablecoinPrice}</Text>
+              <Text type="secondary">{selectedPair1Data.priceToken1String}</Text>
             )}
           </div>
         </Form.Item>
@@ -112,20 +128,26 @@ export const ArbitrageCalculator = () => {
               <Text type="secondary">{selectedPair2Data.address}</Text>
             )}
             {selectedPair2Data && (
-              <Text type="secondary">{selectedPair2Data.stablecoinPrice}</Text>
+              <Text type="secondary">{selectedPair2Data.priceToken1String}</Text>
             )}
           </div>
         </Form.Item>
         <Form.Item label="Stablecoin Conversion Pair" style={{ width: "20vw" }}>
           <Input
-            value={availableStablePair?.pair || "Didnt find stable pair"}
+            value={availableStablePair?.pair || "Didnt find conversion pair"}
             disabled
           />
           {availableStablePair && (
-            <Text type="secondary">{availableStablePair.address}</Text>
+            <>
+              <Text type="secondary">{availableStablePair.address}</Text>
+              <Text type="secondary">{availableStablePair.prieToken0String}</Text>
+            </>
           )}
         </Form.Item>
-        <Form.Item label="Amount in $" style={{ width: "20vw" }}>
+        <Form.Item
+          label="Loan Amount (in token from first pair)"
+          style={{ width: "20vw" }}
+        >
           <Input
             type="number"
             value={loanAmount}
@@ -149,7 +171,7 @@ export const ArbitrageCalculator = () => {
           </div>
           <div style={{ marginTop: 15 }}>
             <h3>
-              Potential Profit {"(if you make arbitrage with loan funds)"}:{" "}
+              Potential Profit {"(if you make arbitrage with loan funds) (Flash loan takes 9% from loan size)"}:{" "}
               {profitWithComission.toFixed(4)} $
             </h3>
           </div>

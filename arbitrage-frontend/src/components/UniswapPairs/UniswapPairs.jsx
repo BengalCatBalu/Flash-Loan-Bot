@@ -23,9 +23,14 @@ const columns = [
     sorter: (a, b) => a.liquidity - b.liquidity,
   },
   {
-    title: "Price",
-    dataIndex: "stablecoinPrice",
-    key: "stablecoinPrice",
+    title: "Price 1",
+    dataIndex: "priceToken0String",
+    key: "priceToken0String",
+  },
+  {
+    title: "Price 2",
+    dataIndex: "priceToken1String",
+    key: "priceToken1String",
   },
   {
     title: "Volume",
