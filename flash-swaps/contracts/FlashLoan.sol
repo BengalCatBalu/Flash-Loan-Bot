@@ -1,30 +1,33 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
+
 import "./interfaces/ILendingPool.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "hardhat/console.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/IUniswapV2.sol";
 
 interface IERC20NonReturning {
     function approve(address spender, uint256 amount) external;
-
     function transfer(address to, uint256 amount) external;
-
     function transferFrom(address from, address to, uint256 amount) external;
 }
 
-contract FlashLoan {
-    ILendingPool pool;
-    IUniswapV2Router02 public uniswapV2Router;
-    address public weth;
-    address public usdt = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
-    address public usdc = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
-    address public dai = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
+contract FlashLoan is ReentrancyGuard {
+    using SafeERC20 for IERC20;
 
-    constructor(address _pool) {
+    ILendingPool public pool;
+    IUniswapV2Router02 public uniswapV2Router;
+    address public immutable weth;
+
+    event FlashLoanInitiated(address borrower, address borrowToken, uint amount, address swapToken, address secondToken);
+    event SwapExecuted(address fromToken, address toToken, uint amountOut);
+    event FundsReturned(address token, uint256 amount);
+
+    constructor(address _pool) payable {
+        require(_pool != address(0), "Pool address cannot be zero");
         pool = ILendingPool(_pool);
-        uniswapV2Router = IUniswapV2Router02(
-            0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D
-        );
+        uniswapV2Router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
         weth = uniswapV2Router.WETH();
     }
 
@@ -32,30 +35,25 @@ contract FlashLoan {
         address borrowToken,
         uint amount,
         address swapToken,
-        address secondStableCoin
-    ) external {
-        require(
-            borrowToken == usdt || borrowToken == usdc || borrowToken == dai,
-            "Not supported token loan"
-        );
-        console.log(
-            "Balance Before Flash loan",
-            IERC20(borrowToken).balanceOf(address(this))
-        );
+        address secondToken
+    ) external nonReentrant {
+        
         address[] memory tokens = new address[](1);
         tokens[0] = borrowToken;
         uint256[] memory amounts = new uint256[](1);
         amounts[0] = amount;
         uint256[] memory modes = new uint256[](1);
         modes[0] = 0;
-        bytes memory params = abi.encode(swapToken, secondStableCoin);
+        bytes memory params = abi.encode(swapToken, secondToken);
+
+        emit FlashLoanInitiated(msg.sender, borrowToken, amount, swapToken, secondToken);
         pool.flashLoan(
             address(this),
             tokens,
             amounts,
             modes,
             address(this),
-            params, // Pass encoded data for arbitrage
+            params,
             0
         );
     }
@@ -66,96 +64,55 @@ contract FlashLoan {
         uint256[] memory premiums,
         address initiator,
         bytes memory params
-    ) public returns (bool) {
-        require(msg.sender == address(pool), "not pool");
-        require(initiator == address(this));
-        require(assets.length == 1, "Small length");
-        (address swapTokenAddress, address secondStableCoinAddress) = abi
-            .decode(params, (address, address));
+    ) external nonReentrant returns (bool) {
+        require(msg.sender == address(pool), "Caller is not the pool");
+        require(initiator == address(this), "Initiator is not this contract");
+        require(assets.length == 1 && amounts.length == 1, "Invalid asset or amount length");
+        
+        (address swapTokenAddress, address secondStableCoinAddress) = abi.decode(params, (address, address));
         address borrowTokenAddress = assets[0];
 
-        // Starting arbitrage
-
-        console.log(
-            "Starting balance of borrowed token: %s",
-            IERC20(borrowTokenAddress).balanceOf(address(this))
-        );
-
-        console.log();
-
-        // // Set up swap path
+        // Approve and swap
+        IERC20(borrowTokenAddress).approve(address(uniswapV2Router), amounts[0]);
         address[] memory path = new address[](3);
         path[0] = borrowTokenAddress;
         path[1] = swapTokenAddress;
         path[2] = secondStableCoinAddress;
-
-        // Approve and swap
-        console.log(
-            "Attempting swap: %s borrowed token to swap token",
-            amounts[0]
-        );
-
-        if (borrowTokenAddress != usdt) {
-            IERC20(borrowTokenAddress).approve(
-                address(uniswapV2Router),
-                IERC20(borrowTokenAddress).balanceOf(address(this))
-            );
-        } else {
-            IERC20NonReturning(borrowTokenAddress).approve(
-                address(uniswapV2Router),
-                IERC20(borrowTokenAddress).balanceOf(address(this))
-            );
-        }
         uint[] memory amountsOut = uniswapV2Router.swapExactTokensForTokens(
             amounts[0],
-            0,
+            0, // Consider setting a minimum amount out to mitigate slippage
             path,
             address(this),
             block.timestamp
         );
-        console.log("Received %s", amountsOut[2]);
+        emit SwapExecuted(borrowTokenAddress, secondStableCoinAddress, amountsOut[2]);
 
-        // // Update path for the second swap
+        // Approve and swap back
+        IERC20(secondStableCoinAddress).approve(address(uniswapV2Router), amountsOut[2]);
         address[] memory path1 = new address[](3);
         path1[0] = secondStableCoinAddress;
         path1[1] = swapTokenAddress;
         path1[2] = borrowTokenAddress;
-        console.log(amountsOut[0], amountsOut[1], amountsOut[2]);
-
-        // // Approve and swap back
-        console.log("Try to swap %s second stable coin", amountsOut[2]);
-        if (secondStableCoinAddress == usdt) {
-            IERC20NonReturning(secondStableCoinAddress).approve(
-                address(uniswapV2Router),
-                IERC20(secondStableCoinAddress).balanceOf(address(this))
-            );
-        } else {
-            IERC20(secondStableCoinAddress).approve(
-                address(uniswapV2Router),
-                IERC20(secondStableCoinAddress).balanceOf(address(this))
-            );
-        }
         amountsOut = uniswapV2Router.swapExactTokensForTokens(
             amountsOut[2],
-            0,
+            0, // Again, consider a minimum amount out
             path1,
             address(this),
             block.timestamp
         );
-        console.log("received %s borrow token", amountsOut[2]);
+        emit SwapExecuted(secondStableCoinAddress, borrowTokenAddress, amountsOut[2]);
 
         // Check and return funds
         uint256 owed = amounts[0] + premiums[0];
-        if (borrowTokenAddress != usdt) {
-            IERC20(borrowTokenAddress).approve(address(pool), owed);
-        } else {
-            IERC20NonReturning(borrowTokenAddress).approve(address(pool), owed);
-        }
-        console.log(
-            "Ending balance of borrowed token: ",
-            owed
-        );
+        IERC20(borrowTokenAddress).approve(address(pool), owed);
+        emit FundsReturned(borrowTokenAddress, owed);
 
         return true;
+    }
+
+    function simpleFlashLoan(uint256 amount) public {
+        require(amount < 10 ether);
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success);
     }
 }

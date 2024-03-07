@@ -1,5 +1,14 @@
 import React, { useState, useContext, useEffect } from "react";
-import { Form, Select, Input, Button, Alert, Typography } from "antd";
+import {
+  Form,
+  Select,
+  Input,
+  Button,
+  Alert,
+  Typography,
+  Space,
+  message,
+} from "antd";
 import { usePairsData } from "../../pairsDataContext";
 import "./style.css";
 
@@ -12,7 +21,8 @@ export const ArbitrageCalculator = () => {
   const [profit, setProfit] = useState(null);
   const [profitWithComission, setProfitWithComission] = useState(null);
   const [error, setError] = useState("");
-
+  const [shareTokenY, setShareTokenY] = useState("");
+  const [noncommonToken, setCommonToken] = useState("");
   // Derived states for UI
   const selectedPair1Data = pairsData.find(
     (pair) => pair.address === selectedPair1
@@ -67,18 +77,77 @@ export const ArbitrageCalculator = () => {
   };
 
   const calculateArbitrage = () => {
-    if (!validatePairs()) return;
+    if (!validatePairs()) {
+      message.error("incorrect pairs");
+      return;
+    }
 
-    // Assuming the validation is passed and pairs are selected correctly
-    const initialTokenAmount =
-      loanAmount / parseFloat(selectedPair1Data.stablecoinPriceNum); // Amount of token obtained from the loan
-    const secondStableAmount =
-      initialTokenAmount * parseFloat(selectedPair2Data.stablecoinPriceNum); // Amount of second token obtained from swapping the first token
+    // Extracting detailed data for each pair
+    const {
+      token0symbol: tokenX1,
+      token1symbol: tokenY1,
+      priceToken0: priceX1Y1,
+      priceToken1: priceY1X1,
+    } = selectedPair1Data;
+    const {
+      token0symbol: tokenY2,
+      token1symbol: tokenZ2,
+      priceToken0: priceY2Z2,
+      priceToken1: priceZ2Y2,
+    } = selectedPair2Data;
 
-    const potentialProfit = secondStableAmount - loanAmount;
-    const profWithCom = secondStableAmount * 0.97 - loanAmount;
+    // Identify the common token Y between the first two pairs
+    const sharedTokenY = [tokenX1, tokenY1].find(
+      (token) => token === tokenY2 || token === tokenZ2
+    );
+    if (!sharedTokenY) {
+      setError("Cannot identify shared token Y between the first two pairs.");
+      return;
+    }
+    const nonCommonTokenFirstPair = selectedPair1Data
+      ? selectedPair1Data.token0symbol === sharedTokenY
+        ? selectedPair1Data.token1symbol
+        : selectedPair1Data.token0symbol
+      : null;
+    setCommonToken(nonCommonTokenFirstPair);
+    // Ensure correct price selection based on token order in each pair
+    const priceXY = sharedTokenY === tokenY1 ? priceY1X1 : priceX1Y1; // Price from X to Y
+    const priceYZ = sharedTokenY === tokenY2 ? priceY2Z2 : priceZ2Y2; // Price from Y to Z
+
+    // For the stablecoin conversion, identify common stablecoin and ensure correct price selection
+    const baseTokenX = tokenX1 === sharedTokenY ? tokenY1 : tokenX1; // Base token X
+    const finalTokenZ = tokenZ2 === sharedTokenY ? tokenY2 : tokenZ2; // Final token Z
+
+    const availableStablePair = pairsData.find(
+      (pair) =>
+        (pair.token0symbol === baseTokenX ||
+          pair.token1symbol === baseTokenX) &&
+        (pair.token0symbol === finalTokenZ || pair.token1symbol === finalTokenZ)
+    );
+
+    if (!availableStablePair) {
+      setError("Cannot find a stablecoin pair matching the criteria.");
+      return;
+    }
+
+    const priceZX =
+      baseTokenX === availableStablePair.token0symbol
+        ? availableStablePair.priceToken1
+        : availableStablePair.priceToken0; // Price from Z back to X
+
+    // Calculate the conversion through the pairs
+    const initialY = loanAmount / priceXY; // Convert X to Y
+    const finalZ = initialY * priceYZ; // Convert Y to Z
+    const finalX = finalZ / priceZX; // Convert Z back to X
+
+    // Calculate potential profit
+    const potentialProfit = finalX - loanAmount;
     setProfit(potentialProfit);
-    setProfitWithComission(profWithCom);
+
+    // Assuming a 9% commission for the flash loan
+    const commission = loanAmount * 0.09;
+    const profitAfterCommission = potentialProfit - commission;
+    setProfitWithComission(profitAfterCommission);
   };
 
   return (
@@ -101,10 +170,12 @@ export const ArbitrageCalculator = () => {
           </Select>
           <div className="text-block">
             {selectedPair1Data && (
-              <Text type="secondary">{selectedPair1Data.address}</Text>
-            )}
-            {selectedPair1Data && (
-              <Text type="secondary">{selectedPair1Data.priceToken1String}</Text>
+              <Text
+                type="secondary"
+                style={{ whiteSpace: "nowrap", fontSize: "1.5vh" }}
+              >
+                {selectedPair1Data.address}
+              </Text>
             )}
           </div>
         </Form.Item>
@@ -125,10 +196,12 @@ export const ArbitrageCalculator = () => {
           </Select>
           <div className="text-block">
             {selectedPair2Data && (
-              <Text type="secondary">{selectedPair2Data.address}</Text>
-            )}
-            {selectedPair2Data && (
-              <Text type="secondary">{selectedPair2Data.priceToken1String}</Text>
+              <Text
+                type="secondary"
+                style={{ whiteSpace: "nowrap", fontSize: "1.5vh" }}
+              >
+                {selectedPair2Data.address}
+              </Text>
             )}
           </div>
         </Form.Item>
@@ -139,13 +212,17 @@ export const ArbitrageCalculator = () => {
           />
           {availableStablePair && (
             <>
-              <Text type="secondary">{availableStablePair.address}</Text>
-              <Text type="secondary">{availableStablePair.prieToken0String}</Text>
+              <Text
+                type="secondary"
+                style={{ whiteSpace: "nowrap", fontSize: "1.5vh" }}
+              >
+                {availableStablePair.address}{" "}
+              </Text>
             </>
           )}
         </Form.Item>
         <Form.Item
-          label="Loan Amount (in token from first pair)"
+          label="Arbitrage Size (Number of initial token from first pair)"
           style={{ width: "20vw" }}
         >
           <Input
@@ -158,25 +235,50 @@ export const ArbitrageCalculator = () => {
           Calculate Profit
         </Button>
       </Form>
-      {error && (
-        <Alert type="error" message={error} style={{ margin: "15px 0" }} />
-      )}
-      {profit !== null && profitWithComission != null && (
-        <>
-          <div style={{ marginTop: 15 }}>
-            <h3>
-              Potential Profit {"(if you make arbitrage with your funds)"}:{" "}
-              {profit.toFixed(4)} $
-            </h3>
-          </div>
-          <div style={{ marginTop: 15 }}>
-            <h3>
-              Potential Profit {"(if you make arbitrage with loan funds) (Flash loan takes 9% from loan size)"}:{" "}
-              {profitWithComission.toFixed(4)} $
-            </h3>
-          </div>
-        </>
-      )}
+      <div className="information">
+        <div className="block">
+          {selectedPair1Data && (
+            <Text type="secondary">{selectedPair1Data.priceToken1String}</Text>
+          )}
+          {selectedPair1Data && (
+            <Text type="secondary">{selectedPair1Data.priceToken0String}</Text>
+          )}
+        </div>
+        <div className="block">
+          {selectedPair2Data && (
+            <Text type="secondary">{selectedPair2Data.priceToken1String}</Text>
+          )}
+          {selectedPair2Data && (
+            <Text type="secondary">{selectedPair2Data.priceToken0String}</Text>
+          )}
+        </div>
+        <div className="block">
+          {availableStablePair && (
+            <Text type="secondary">
+              {availableStablePair.priceToken0String}
+            </Text>
+          )}
+        </div>
+        {profit !== null && profitWithComission != null && (
+          <>
+            <div style={{ marginTop: "1vh", marginLeft: "1vw" , fontSize: "1.5vh" }}>
+              <h3>
+                Potential Profit {"(if you make arbitrage with your funds)"}:{" "}
+                {profit.toFixed(4)} {noncommonToken}
+              </h3>
+            </div>
+            <div style={{ marginTop: "1vh", marginLeft: "1vw" , fontSize: "1.5vh" }}>
+              <h3>
+                Potential Profit{" "}
+                {
+                  "(if you make arbitrage with loan funds) (Flash loan takes 9% from loan size)"
+                }
+                : {profitWithComission.toFixed(4)} {noncommonToken}
+              </h3>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 };

@@ -70,7 +70,7 @@ export const UniswapPairs = () => {
   };
 
   const pagination = {
-    pageSize: 10,
+    pageSize: 9,
     hideOnSinglePage: true,
     showSizeChanger: false,
   };

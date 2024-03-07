@@ -8,7 +8,7 @@ import "@rainbow-me/rainbowkit/styles.css";
 
 import { getDefaultConfig, RainbowKitProvider } from "@rainbow-me/rainbowkit";
 import { WagmiProvider } from "wagmi";
-import { mainnet } from "wagmi/chains";
+import { hardhat } from "wagmi/chains";
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 
 // Инициализация Apollo Client
@@ -20,7 +20,7 @@ const client = new ApolloClient({
 const config = getDefaultConfig({
   appName: "StableCoin Arbitrage",
   projectId: "1337",
-  chains: [mainnet],
+  chains: [hardhat],
 });
 
 const queryClient = new QueryClient();
